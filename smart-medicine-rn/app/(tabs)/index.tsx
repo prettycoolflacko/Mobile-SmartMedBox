@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
+import * as Notifications from 'expo-notifications';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,7 +12,20 @@ import {
 } from 'react-native';
 
 // GANTI DENGAN DOMAIN HTTPS ANDA
-const API_URL = "https://flacko.fyuko.dev/api"; 
+const API_URL = "https://flacko.fyuko.dev/api";
+
+// ===============================================
+// KONFIGURASI NOTIFIKASI
+// ===============================================
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+}); 
 
 export default function HomeScreen() {
   // --- STATE ---
@@ -25,6 +39,10 @@ export default function HomeScreen() {
   const [medTime, setMedTime] = useState(""); 
   const [medDesc, setMedDesc] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Refs untuk mencegah notifikasi spam
+  const lastHighTempNotif = useRef<number>(0);
+  const lastLateNotif = useRef<number>(0);
 
   // ===============================================
   // 1. POLLING DATA (Anti-Cache)
@@ -51,7 +69,22 @@ export default function HomeScreen() {
   };
 
   // ===============================================
-  // 2. JAM DIGITAL (Untuk Cek Telat Minum Obat)
+  // 2. REQUEST NOTIFICATION PERMISSION
+  // ===============================================
+  useEffect(() => {
+    (async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Notification Permission',
+          'Please enable notifications to receive alerts for temperature and medicine reminders.'
+        );
+      }
+    })();
+  }, []);
+
+  // ===============================================
+  // 3. JAM DIGITAL (Untuk Cek Telat Minum Obat)
   // ===============================================
   useEffect(() => {
     const timer = setInterval(() => {
@@ -64,7 +97,7 @@ export default function HomeScreen() {
   }, []);
 
   // ===============================================
-  // 3. INTERVAL UTAMA
+  // 4. INTERVAL UTAMA
   // ===============================================
   useEffect(() => {
     fetchData();
@@ -116,6 +149,42 @@ export default function HomeScreen() {
   const isLate = isTimeForMeds && monitorData.status === "CLOSED";
   
   const isOpen = monitorData.status === "OPEN";
+
+  // ===============================================
+  // 5. TRIGGER NOTIFIKASI (Anti-Spam: 5 menit cooldown)
+  // ===============================================
+  useEffect(() => {
+    const now = Date.now();
+    
+    // Notifikasi Suhu Tinggi (setiap 5 menit)
+    if (isHighTemp && (now - lastHighTempNotif.current) > 300000) {
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: "🔥 Temperature Alert!",
+          body: `Medicine box overheating: ${monitorData.temp.toFixed(1)}°C`,
+          sound: true,
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+        },
+        trigger: null, // Immediate
+      });
+      lastHighTempNotif.current = now;
+    }
+
+    // Notifikasi Waktu Minum Obat (setiap 5 menit)
+    if (isLate && (now - lastLateNotif.current) > 300000) {
+      const currentMedicine = schedules.find(s => s.time === currentTime);
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: "💊 Medicine Time!",
+          body: `Time to take: ${currentMedicine?.name || 'your medicine'}`,
+          sound: true,
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+        },
+        trigger: null,
+      });
+      lastLateNotif.current = now;
+    }
+  }, [isHighTemp, isLate, monitorData.temp, currentTime, schedules]);
 
   // Tentukan Warna Status
   let statusColor = "#66bb6a"; // Hijau (Normal)
