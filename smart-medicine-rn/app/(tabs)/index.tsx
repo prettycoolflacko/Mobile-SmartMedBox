@@ -9,6 +9,8 @@ import {
   ,
 
 
+
+
   StyleSheet, Text,
   TextInput,
   TouchableOpacity,
@@ -103,6 +105,17 @@ export default function HomeScreen() {
     fetchData();
   }, []);
 
+  // --- HELPER: Format Medicine Name ---
+  const formatMedicineName = (name: string): string => {
+    // Capitalize first letter of each word
+    return name
+      .trim()
+      .toLowerCase()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
   // --- CRUD FUNCTIONS ---
   const handleAddSchedule = async () => {
     if (!medName || !medTime) return Alert.alert("Error", "Fill Name & Time");
@@ -112,18 +125,41 @@ export default function HomeScreen() {
        return Alert.alert("Error", "Format Time must be HH:MM");
     }
 
+    // Format medicine name before saving
+    const formattedName = formatMedicineName(medName);
+
     await fetch(`${API_URL}/schedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: medName, time: medTime, description: medDesc })
+        body: JSON.stringify({ 
+          name: formattedName, 
+          time: medTime, 
+          description: medDesc.trim() 
+        })
     });
     setMedName(""); setMedTime(""); setMedDesc(""); setModalVisible(false);
     fetchData();
   };
 
-  const handleDelete = async (id: string) => {
-    await fetch(`${API_URL}/schedule/${id}`, { method: 'DELETE' });
-    fetchData();
+  const handleDelete = async (id: string, medicineName: string) => {
+    Alert.alert(
+      "Delete Schedule",
+      `Are you sure you want to delete "${medicineName}"?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await fetch(`${API_URL}/schedule/${id}`, { method: 'DELETE' });
+            fetchData();
+          }
+        }
+      ]
+    );
   };
 
   if (loading) {
@@ -222,7 +258,7 @@ export default function HomeScreen() {
                 <Text style={styles.medName}>{item.name}</Text>
                 <Text style={styles.medDesc}>{item.description}</Text>
               </View>
-              <TouchableOpacity onPress={() => handleDelete(item.id)}>
+              <TouchableOpacity onPress={() => handleDelete(item.id, item.name)}>
                 <Ionicons name="trash-outline" size={24} color="#ef5350" />
               </TouchableOpacity>
             </View>
@@ -250,7 +286,9 @@ export default function HomeScreen() {
                 placeholderTextColor="#999"
                 value={medName} 
                 onChangeText={setMedName}
+                autoCapitalize="words"
               />
+              <Text style={styles.formatHint}>Will be auto-formatted (Title Case)</Text>
             </View>
 
             <View style={styles.inputGroup}>
