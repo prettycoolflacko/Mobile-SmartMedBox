@@ -7,6 +7,8 @@ import {
   FlatList, Modal,
   RefreshControl // Added Pull-to-Refresh
   ,
+
+
   StyleSheet, Text,
   TextInput,
   TouchableOpacity,
@@ -234,13 +236,58 @@ export default function HomeScreen() {
 
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>New Schedule</Text>
-          <TextInput style={styles.input} placeholder="Medicine Name" value={medName} onChangeText={setMedName}/>
-          <TextInput style={styles.input} placeholder="Time (HH:MM)" value={medTime} onChangeText={setMedTime} keyboardType="numbers-and-punctuation"/>
-          <TextInput style={styles.input} placeholder="Description" value={medDesc} onChangeText={setMedDesc}/>
-          <View style={styles.modalButtons}>
-            <TouchableOpacity style={[styles.btn, styles.btnCancel]} onPress={() => setModalVisible(false)}><Text style={styles.btnText}>Cancel</Text></TouchableOpacity>
-            <TouchableOpacity style={[styles.btn, styles.btnSave]} onPress={handleAddSchedule}><Text style={styles.btnText}>Save</Text></TouchableOpacity>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Ionicons name="calendar-outline" size={32} color="#2196F3" />
+              <Text style={styles.modalTitle}>Add New Schedule</Text>
+            </View>
+            
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Medicine Name</Text>
+              <TextInput 
+                style={styles.input} 
+                placeholder="e.g. Paracetamol, Vitamin C" 
+                placeholderTextColor="#999"
+                value={medName} 
+                onChangeText={setMedName}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Time</Text>
+              <TextInput 
+                style={styles.input} 
+                placeholder="08:30" 
+                placeholderTextColor="#999"
+                value={medTime} 
+                onChangeText={setMedTime} 
+                keyboardType="numbers-and-punctuation"
+                maxLength={5}
+              />
+              <Text style={styles.formatHint}>Format: HH:MM (24-hour)</Text>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Description (Optional)</Text>
+              <TextInput 
+                style={styles.input} 
+                placeholder="e.g. After breakfast, With water" 
+                placeholderTextColor="#999"
+                value={medDesc} 
+                onChangeText={setMedDesc}
+              />
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.btn, styles.btnCancel]} onPress={() => setModalVisible(false)}>
+                <Ionicons name="close-circle-outline" size={20} color="white" style={{marginRight: 5}} />
+                <Text style={styles.btnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.btn, styles.btnSave]} onPress={handleAddSchedule}>
+                <Ionicons name="checkmark-circle-outline" size={20} color="white" style={{marginRight: 5}} />
+                <Text style={styles.btnText}>Save</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -266,11 +313,16 @@ const styles = StyleSheet.create({
   medName: { fontSize: 16, fontWeight: '700', color: '#333' },
   medDesc: { fontSize: 13, color: '#666' },
   fab: { position: 'absolute', bottom: 30, right: 30, backgroundColor: '#2196F3', width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', elevation: 6 },
-  modalView: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', padding: 25 },
-  modalTitle: { fontSize: 24, fontWeight: 'bold', color: 'white', marginBottom: 20, textAlign: 'center' },
-  input: { backgroundColor: 'white', padding: 16, borderRadius: 12, marginBottom: 15, fontSize: 16 },
-  modalButtons: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
-  btn: { flex: 1, padding: 16, borderRadius: 12, alignItems: 'center' },
+  modalView: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.7)', padding: 20 },
+  modalContent: { backgroundColor: 'white', borderRadius: 20, padding: 25, elevation: 10, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 25 },
+  modalTitle: { fontSize: 22, fontWeight: '800', color: '#1a1a1a', marginLeft: 10 },
+  inputGroup: { marginBottom: 20 },
+  inputLabel: { fontSize: 14, fontWeight: '700', color: '#1a1a1a', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: { backgroundColor: '#f5f5f5', padding: 16, borderRadius: 12, fontSize: 16, borderWidth: 1, borderColor: '#e0e0e0', color: '#333' },
+  formatHint: { fontSize: 12, color: '#666', marginTop: 6, fontStyle: 'italic', textShadowColor: 'rgba(0, 0, 0, 0.3)', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 2 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, marginTop: 10 },
+  btn: { flex: 1, padding: 16, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', elevation: 3 },
   btnCancel: { backgroundColor: '#ef5350' },
   btnSave: { backgroundColor: '#66bb6a' },
   btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
