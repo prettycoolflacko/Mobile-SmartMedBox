@@ -5,18 +5,18 @@ import {
   ActivityIndicator,
   Alert,
   FlatList, Modal,
+  RefreshControl // Added Pull-to-Refresh
+  ,
   StyleSheet, Text,
   TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
 
-// GANTI DENGAN DOMAIN HTTPS ANDA
+// ✅ FINAL HTTPS URL
 const API_URL = "https://flacko.fyuko.dev/api";
 
-// ===============================================
-// KONFIGURASI NOTIFIKASI
-// ===============================================
+// 🔔 Notification Config
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -28,28 +28,26 @@ Notifications.setNotificationHandler({
 }); 
 
 export default function HomeScreen() {
-  // --- STATE ---
   const [monitorData, setMonitorData] = useState<any>({ temp: 0, status: "Unknown" });
   const [schedules, setSchedules] = useState<any[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [currentTime, setCurrentTime] = useState("--:--");
+  const [refreshing, setRefreshing] = useState(false); // For pull-to-refresh
   
-  // Form Inputs
+  // Inputs
   const [medName, setMedName] = useState("");
   const [medTime, setMedTime] = useState(""); 
   const [medDesc, setMedDesc] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Refs untuk mencegah notifikasi spam
+  // Refs for anti-spam
   const lastHighTempNotif = useRef<number>(0);
   const lastLateNotif = useRef<number>(0);
 
-  // ===============================================
-  // 1. POLLING DATA (Anti-Cache)
-  // ===============================================
+  // --- 1. FETCH DATA ---
   const fetchData = async () => {
     try {
-      // Trik ?t=... agar Android selalu ambil data baru
+      // Add timestamp to prevent caching
       const response = await fetch(`${API_URL}/data?t=${Date.now()}`);
       const data = await response.json();
       
@@ -63,46 +61,44 @@ export default function HomeScreen() {
         setSchedules(data.schedules);
       }
       setLoading(false);
+      setRefreshing(false);
     } catch (error) {
       console.log("Network error (polling)");
+      setRefreshing(false);
     }
   };
 
-  // ===============================================
-  // 2. REQUEST NOTIFICATION PERMISSION
-  // ===============================================
+  // --- 2. PERMISSIONS ---
   useEffect(() => {
     (async () => {
       const { status } = await Notifications.requestPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Notification Permission',
-          'Please enable notifications to receive alerts for temperature and medicine reminders.'
-        );
+        // Optional: Alert user only once
+        console.log("Notification permission denied");
       }
     })();
   }, []);
 
-  // ===============================================
-  // 3. JAM DIGITAL (Untuk Cek Telat Minum Obat)
-  // ===============================================
+  // --- 3. CLOCK ---
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
-      // Format HH:MM
       const timeString = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
       setCurrentTime(timeString);
     }, 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // ===============================================
-  // 4. INTERVAL UTAMA
-  // ===============================================
+  // --- 4. POLLING INTERVAL ---
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 1000); // Update tiap 1 detik
+    const interval = setInterval(fetchData, 2000); // Polling every 2s is enough for HTTPS
     return () => clearInterval(interval);
+  }, []);
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    fetchData();
   }, []);
 
   // --- CRUD FUNCTIONS ---
@@ -132,111 +128,69 @@ export default function HomeScreen() {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#2196F3" />
+        <Text style={{marginTop: 10}}>Connecting to Server...</Text>
       </View>
     );
   }
 
-  // ===============================================
-  // LOGIKA WARNING (RULES)
-  // ===============================================
-  
-  // RULE 1: HIGH TEMP (> 40°C)
+  // --- LOGIC RULES ---
   const isHighTemp = monitorData.temp > 40;
-
-  // RULE 2: MISSED SCHEDULE (Cek Jam HP vs Jadwal vs Status Box)
-  // Jika jam sekarang ada di daftar jadwal DAN box masih TERTUTUP
+  // Late Logic: Current Time == Schedule Time AND Box is CLOSED
   const isTimeForMeds = schedules.some(s => s.time === currentTime);
   const isLate = isTimeForMeds && monitorData.status === "CLOSED";
-  
   const isOpen = monitorData.status === "OPEN";
 
-  // ===============================================
-  // 5. TRIGGER NOTIFIKASI (Anti-Spam: 5 menit cooldown)
-  // ===============================================
-  useEffect(() => {
-    const now = Date.now();
-    
-    // Notifikasi Suhu Tinggi (setiap 5 menit)
-    if (isHighTemp && (now - lastHighTempNotif.current) > 300000) {
-      Notifications.scheduleNotificationAsync({
-        content: {
-          title: "🔥 Temperature Alert!",
-          body: `Medicine box overheating: ${monitorData.temp.toFixed(1)}°C`,
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-        },
-        trigger: null, // Immediate
-      });
-      lastHighTempNotif.current = now;
-    }
-
-    // Notifikasi Waktu Minum Obat (setiap 5 menit)
-    if (isLate && (now - lastLateNotif.current) > 300000) {
-      const currentMedicine = schedules.find(s => s.time === currentTime);
-      Notifications.scheduleNotificationAsync({
-        content: {
-          title: "💊 Medicine Time!",
-          body: `Time to take: ${currentMedicine?.name || 'your medicine'}`,
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-        },
-        trigger: null,
-      });
-      lastLateNotif.current = now;
-    }
-  }, [isHighTemp, isLate, monitorData.temp, currentTime, schedules]);
-
-  // Tentukan Warna Status
-  let statusColor = "#66bb6a"; // Hijau (Normal)
-  let statusText = monitorData.status;
-
-  if (isHighTemp) {
-      statusColor = "#b71c1c"; // Merah Gelap (Bahaya)
-      statusText = "OVERHEAT";
-  } else if (isOpen) {
-      statusColor = "#ef5350"; // Merah (Terbuka)
-  } else if (isLate) {
-      statusColor = "#ff9800"; // Oranye (Waktunya Minum)
-      statusText = "TIME TO TAKE";
+  // --- NOTIFICATIONS ---
+  const now = Date.now();
+  if (isHighTemp && (now - lastHighTempNotif.current) > 300000) { // 5 min cooldown
+    Notifications.scheduleNotificationAsync({
+      content: { title: "🔥 OVERHEAT!", body: `Temp is ${monitorData.temp.toFixed(1)}°C!`, sound: true },
+      trigger: null,
+    });
+    lastHighTempNotif.current = now;
   }
+  if (isLate && (now - lastLateNotif.current) > 300000) {
+    const med = schedules.find(s => s.time === currentTime);
+    Notifications.scheduleNotificationAsync({
+      content: { title: "💊 Time for Meds!", body: `Take ${med?.name || 'medicine'} now!`, sound: true },
+      trigger: null,
+    });
+    lastLateNotif.current = now;
+  }
+
+  // Status Styling
+  let statusColor = "#66bb6a"; 
+  let statusText = monitorData.status;
+  if (isHighTemp) { statusColor = "#b71c1c"; statusText = "OVERHEAT"; } 
+  else if (isOpen) { statusColor = "#ef5350"; } 
+  else if (isLate) { statusColor = "#ff9800"; statusText = "TAKE MEDS"; }
 
   return (
     <View style={styles.container}>
       
-      {/* --- BANNER PERINGATAN --- */}
-      
-      {/* 1. WARNING SUHU TINGGI */}
+      {/* ALERTS */}
       {isHighTemp && (
         <View style={[styles.warningBanner, { backgroundColor: '#d32f2f' }]}>
           <Ionicons name="thermometer" size={28} color="white" />
-          <View style={{marginLeft: 10}}>
-            <Text style={styles.warningTitle}>TEMPERATURE WARNING!</Text>
-            <Text style={styles.warningText}>Box is too hot ({monitorData.temp.toFixed(1)}°C)</Text>
-          </View>
+          <Text style={styles.warningText}>HIGH TEMPERATURE ALERT!</Text>
         </View>
       )}
-
-      {/* 2. WARNING JADWAL MINUM OBAT */}
       {isLate && !isHighTemp && (
         <View style={[styles.warningBanner, { backgroundColor: '#ff9800' }]}>
           <Ionicons name="alarm" size={28} color="white" />
-          <View style={{marginLeft: 10}}>
-            <Text style={styles.warningTitle}>MEDICINE TIME!</Text>
-            <Text style={styles.warningText}>Please open the box now.</Text>
-          </View>
+          <Text style={styles.warningText}>MEDICINE TIME!</Text>
         </View>
       )}
 
       <FlatList
         data={schedules}
         keyExtractor={(item) => item.id}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={{ paddingBottom: 100 }}
         
-        // HEADER DASHBOARD
         ListHeaderComponent={
           <View>
-            <Text style={styles.headerTitle}>Smart Box Monitor</Text>
-            
+            <Text style={styles.headerTitle}>Smart Medicine Box</Text>
             <View style={styles.monitorRow}>
               {/* Temp Card */}
               <View style={[styles.card, isHighTemp && { borderColor: 'red', borderWidth: 2 }]}>
@@ -244,26 +198,19 @@ export default function HomeScreen() {
                 <Text style={styles.cardValue}>{monitorData?.temp?.toFixed(1)}°C</Text>
                 <Text style={styles.cardLabel}>Temperature</Text>
               </View>
-
               {/* Status Card */}
               <View style={[styles.card, { borderColor: statusColor, borderWidth: 2 }]}>
                 <Ionicons name={isOpen ? "lock-open-outline" : "lock-closed-outline"} size={32} color={statusColor} />
-                <Text style={[styles.cardValue, { color: statusColor, fontSize: 22 }]}>
-                  {statusText}
-                </Text>
-                <Text style={styles.cardLabel}>Current Status</Text>
+                <Text style={[styles.cardValue, { color: statusColor, fontSize: 20 }]}>{statusText}</Text>
+                <Text style={styles.cardLabel}>Box Status</Text>
               </View>
             </View>
-
-            <Text style={styles.sectionTitle}>Medicine Schedule</Text>
+            <Text style={styles.sectionTitle}>Daily Schedules</Text>
           </View>
         }
         
-        // LIST JADWAL
         renderItem={({ item }) => {
-          // Highlight jadwal yang sedang aktif (sesuai jam sekarang)
           const isCurrentSchedule = item.time === currentTime;
-          
           return (
             <View style={[styles.scheduleItem, isCurrentSchedule && { borderColor: '#ff9800', borderWidth: 2 }]}>
               <View style={[styles.timeContainer, isCurrentSchedule && { backgroundColor: '#ff9800' }]}>
@@ -274,89 +221,57 @@ export default function HomeScreen() {
                 <Text style={styles.medDesc}>{item.description}</Text>
               </View>
               <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                <Ionicons name="trash-outline" size={24} color="red" />
+                <Ionicons name="trash-outline" size={24} color="#ef5350" />
               </TouchableOpacity>
             </View>
           );
         }}
       />
 
-      {/* TOMBOL TAMBAH (+ FAB) */}
       <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
         <Ionicons name="add" size={30} color="white" />
       </TouchableOpacity>
 
-      {/* POPUP TAMBAH JADWAL */}
-      <Modal
-        animationType="slide" transparent={true} visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
+      <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>Add Schedule</Text>
-          
+          <Text style={styles.modalTitle}>New Schedule</Text>
           <TextInput style={styles.input} placeholder="Medicine Name" value={medName} onChangeText={setMedName}/>
           <TextInput style={styles.input} placeholder="Time (HH:MM)" value={medTime} onChangeText={setMedTime} keyboardType="numbers-and-punctuation"/>
-          <TextInput style={styles.input} placeholder="Description (e.g. After meal)" value={medDesc} onChangeText={setMedDesc}/>
-          
+          <TextInput style={styles.input} placeholder="Description" value={medDesc} onChangeText={setMedDesc}/>
           <View style={styles.modalButtons}>
-            <TouchableOpacity style={[styles.btn, styles.btnCancel]} onPress={() => setModalVisible(false)}>
-              <Text style={styles.btnText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.btn, styles.btnSave]} onPress={handleAddSchedule}>
-              <Text style={styles.btnText}>Save</Text>
-            </TouchableOpacity>
+            <TouchableOpacity style={[styles.btn, styles.btnCancel]} onPress={() => setModalVisible(false)}><Text style={styles.btnText}>Cancel</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.btn, styles.btnSave]} onPress={handleAddSchedule}><Text style={styles.btnText}>Save</Text></TouchableOpacity>
           </View>
         </View>
       </Modal>
-
     </View>
   );
 }
 
-// STYLES
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5', paddingTop: 50, paddingHorizontal: 20 },
+  container: { flex: 1, backgroundColor: '#f8f9fa', paddingTop: 50, paddingHorizontal: 20 },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 26, fontWeight: 'bold', marginBottom: 20, color: '#333' },
-  sectionTitle: { fontSize: 20, fontWeight: 'bold', marginTop: 25, marginBottom: 15, color: '#333' },
-  
-  // Warning Banners (Rules Logic)
-  warningBanner: {
-    padding: 15, borderRadius: 10, marginBottom: 20,
-    flexDirection: 'row', alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 3
-  },
-  warningTitle: { color: 'white', fontWeight: 'bold', fontSize: 18 },
-  warningText: { color: 'white', fontSize: 14 },
-
+  headerTitle: { fontSize: 28, fontWeight: '800', marginBottom: 20, color: '#1a1a1a' },
+  sectionTitle: { fontSize: 20, fontWeight: '700', marginTop: 25, marginBottom: 15, color: '#1a1a1a' },
+  warningBanner: { padding: 15, borderRadius: 12, marginBottom: 20, flexDirection: 'row', alignItems: 'center', elevation: 4 },
+  warningText: { color: 'white', fontWeight: 'bold', fontSize: 16, marginLeft: 10 },
   monitorRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  card: { 
-    width: '48%', backgroundColor: 'white', padding: 15, borderRadius: 15, 
-    alignItems: 'center', elevation: 3 
-  },
-  cardValue: { fontSize: 24, fontWeight: 'bold', marginVertical: 5 },
-  cardLabel: { fontSize: 14, color: 'gray' },
-
-  scheduleItem: {
-    backgroundColor: 'white', flexDirection: 'row', alignItems: 'center',
-    padding: 15, borderRadius: 12, marginBottom: 10, elevation: 2
-  },
-  timeContainer: { backgroundColor: '#e3f2fd', padding: 10, borderRadius: 8, marginRight: 15 },
-  timeText: { fontSize: 18, fontWeight: 'bold', color: '#1976D2' },
+  card: { width: '48%', backgroundColor: 'white', padding: 15, borderRadius: 16, alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
+  cardValue: { fontSize: 24, fontWeight: '800', marginVertical: 8 },
+  cardLabel: { fontSize: 12, color: '#888', fontWeight: '600', textTransform: 'uppercase' },
+  scheduleItem: { backgroundColor: 'white', flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 16, marginBottom: 12, elevation: 1 },
+  timeContainer: { backgroundColor: '#e3f2fd', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, marginRight: 15 },
+  timeText: { fontSize: 16, fontWeight: '800', color: '#1976D2' },
   infoContainer: { flex: 1 },
-  medName: { fontSize: 16, fontWeight: 'bold', color: '#333' },
-  medDesc: { fontSize: 14, color: 'gray' },
-
-  fab: {
-    position: 'absolute', bottom: 30, right: 30,
-    backgroundColor: '#2196F3', width: 60, height: 60, borderRadius: 30,
-    justifyContent: 'center', alignItems: 'center', elevation: 5
-  },
-  modalView: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', padding: 20 },
+  medName: { fontSize: 16, fontWeight: '700', color: '#333' },
+  medDesc: { fontSize: 13, color: '#666' },
+  fab: { position: 'absolute', bottom: 30, right: 30, backgroundColor: '#2196F3', width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', elevation: 6 },
+  modalView: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', padding: 25 },
   modalTitle: { fontSize: 24, fontWeight: 'bold', color: 'white', marginBottom: 20, textAlign: 'center' },
-  input: { backgroundColor: 'white', padding: 15, borderRadius: 10, marginBottom: 15, fontSize: 16 },
-  modalButtons: { flexDirection: 'row', justifyContent: 'space-between' },
-  btn: { flex: 1, padding: 15, borderRadius: 10, alignItems: 'center', marginHorizontal: 5 },
-  btnCancel: { backgroundColor: '#ff5252' },
-  btnSave: { backgroundColor: '#4caf50' },
+  input: { backgroundColor: 'white', padding: 16, borderRadius: 12, marginBottom: 15, fontSize: 16 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  btn: { flex: 1, padding: 16, borderRadius: 12, alignItems: 'center' },
+  btnCancel: { backgroundColor: '#ef5350' },
+  btnSave: { backgroundColor: '#66bb6a' },
   btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
 });
